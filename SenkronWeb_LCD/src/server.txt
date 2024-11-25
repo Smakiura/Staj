@@ -1,0 +1,181 @@
+#include <WiFi.h>
+#include <ESPAsyncWebServer.h>
+#include <FS.h>
+#include <SPIFFS.h>
+
+const char* ssid = "sensor-wifi";
+const char* password = "sensorlab2017";
+
+// Pin definitions
+const int LED1_PIN = 26;
+const int LED2_PIN = 27;
+const int SWITCH_PIN = 14;
+
+// Create an AsyncWebServer object on port 80
+AsyncWebServer server(80);
+
+// Function to get the status of the LEDs and the switch
+String getStatusHTML() {
+  String html = "<html><head>";
+  html += "<style>";
+  html += "body {";
+  html += "  display: flex;";
+  html += "  justify-content: center;";
+  html += "  align-items: center;";
+  html += "  height: 100vh;";
+  html += "  margin: 0;";
+  html += "  font-family: Arial, sans-serif;";
+  html += "  background-color: #f0f0f0;";
+  html += "}";
+  html += ".container {";
+  html += "  background-color: white;";
+  html += "  padding: 20px;";
+  html += "  border-radius: 8px;";
+  html += "  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);";
+  html += "  text-align: center;";
+  html += "  width: 300px;"; // Set a width for the container
+  html += "}";
+  html += ".indicator {";
+  html += "  display: inline-block;";
+  html += "  width: 20px;";
+  html += "  height: 20px;";
+  html += "  border-radius: 50%;";
+  html += "  margin-right: 10px;";
+  html += "}";
+  html += ".led1 { background-color: green; }";
+  html += ".led2 { background-color: red; }";
+  html += ".off { background-color: gray; }";
+  html += "</style>";
+  html += "<script>";
+  html += "function checkSwitchState() {";
+  html += "  fetch('/checkSwitch').then(response => response.json()).then(data => {";
+  html += "    if (data.switchStateChanged) {";
+  html += "      location.reload();"; // Reload the page if switch state has changed
+  html += "    }";
+  html += "  });";
+  html += "  setTimeout(checkSwitchState, 1000);"; // Check every second
+  html += "}";
+  html += "window.onload = checkSwitchState;"; // Start checking on window load
+  html += "</script>";
+  html += "</head><body>";
+  html += "<div class='container'>"; // Start the container
+  html += "<h1>LED Status</h1>";
+  
+  // LED1
+  html += "<div>";
+  html += "<span>LED1: </span>";
+  html += "<span class='indicator " + String(digitalRead(LED1_PIN) == HIGH ? "led1" : "off") + "'></span>";
+  html += "<form action=\"/toggleLED1\" method=\"POST\" style='display:inline;'>";
+  html += "<input type=\"submit\" value=\"Toggle LED1\">";
+  html += "</form>";
+  html += "</div>";
+
+  // LED2
+  html += "<div>";
+  html += "<span>LED2: </span>";
+  html += "<span class='indicator " + String(digitalRead(LED2_PIN) == HIGH ? "led2" : "off") + "'></span>";
+  if (digitalRead(SWITCH_PIN) == LOW) { // Check if the switch is ON
+    html += "<form action=\"/toggleLED2\" method=\"POST\" style='display:inline;'>";
+    html += "<input type=\"submit\" value=\"Toggle LED2\">";
+    html += "</form>";
+  } else {
+    html += "<button disabled>Toggle LED2 (Switch OFF)</button>";
+  }
+  html += "</div>";
+
+  // Switch Status (using <img> tag instead of background-image)
+  html += "<div>";
+  html += "<span>Switch Status: </span>";
+  bool switchState = digitalRead(SWITCH_PIN) == LOW; // Active low
+  html += "<img src='" + String(switchState ? "/off.png" : "/on.png") + "' style='width: 50px; height: 20px;' />";
+  html += "</div>";
+  
+  html += "</div>"; // End the container
+  html += "</body></html>";
+  return html;
+}
+
+// Handle root URL
+void handleRoot(AsyncWebServerRequest *request) {
+  request->send(200, "text/html", getStatusHTML());
+}
+
+// Handle LED1 toggle
+void handleToggleLED1(AsyncWebServerRequest *request) {
+  int led1State = digitalRead(LED1_PIN);
+  digitalWrite(LED1_PIN, !led1State); // Toggle the LED1 state
+  request->redirect("/"); // Redirect to the root page
+}
+
+// Handle LED2 toggle
+void handleToggleLED2(AsyncWebServerRequest *request) {
+  int led2State = digitalRead(LED2_PIN);
+  digitalWrite(LED2_PIN, !led2State); // Toggle the LED2 state
+  request->redirect("/"); // Redirect to the root page
+}
+
+// Handle check switch state
+void handleCheckSwitch(AsyncWebServerRequest *request) {
+  static bool lastSwitchState = HIGH; // Initial state of the switch
+  bool currentSwitchState = digitalRead(SWITCH_PIN) == LOW; // Active low
+
+  // Create a JSON response to indicate if the switch state has changed
+  String jsonResponse = "{\"switchStateChanged\": " + String(currentSwitchState != lastSwitchState ? "true" : "false") + "}";
+  
+  if (currentSwitchState != lastSwitchState) {
+    lastSwitchState = currentSwitchState; // Update the last state
+  }
+  
+  request->send(200, "application/json", jsonResponse);
+}
+
+void setup() {
+  Serial.begin(9600);
+
+  // Initialize SPIFFS
+  if (!SPIFFS.begin(true)) {
+    Serial.println("SPIFFS Mount Failed");
+    return;
+  }
+
+  // Set pin modes
+  pinMode(LED1_PIN, OUTPUT);
+  pinMode(LED2_PIN, OUTPUT);
+  pinMode(SWITCH_PIN, INPUT_PULLUP); // Enable internal pull-up resistor
+
+  // Initialize LEDs to OFF
+  digitalWrite(LED1_PIN, LOW);
+  digitalWrite(LED2_PIN, LOW);
+  
+  // Connect to Wi-Fi
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi...");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.print(".");
+  }
+  Serial.println("\nConnected to WiFi");
+
+  // Print IP address to Serial Monitor
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+
+  // Start server
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/toggleLED1", HTTP_POST, handleToggleLED1);
+  server.on("/toggleLED2", HTTP_POST, handleToggleLED2);
+  server.on("/checkSwitch", HTTP_GET, handleCheckSwitch); // New endpoint for switch state
+  server.on("/on.png", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(SPIFFS, "/on.png", "image/png");
+  });
+  server.on("/off.png", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(SPIFFS, "/off.png", "image/png");
+  });
+
+  server.begin();
+  Serial.println("HTTP server started");
+}
+
+void loop() {
+  // No need to call handleClient() as AsyncWebServer handles it automatically
+}

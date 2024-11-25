@@ -1,0 +1,39 @@
+ // Joystick button check for LED control
+    if (digitalRead(JOYSTICK_UP_PIN) == LOW) {
+        hardwareManager.toggleLED1();
+        lcdManager.update();  // Update LCD for LED1 toggle
+        delay(200);           // Debounce delay
+    }
+
+    if (digitalRead(JOYSTICK_DOWN_PIN) == LOW) {
+        hardwareManager.toggleLED2();
+        lcdManager.update();  // Update LCD for LED2 toggle
+        delay(200);           // Debounce delay
+    }
+        // Read joystick buttons
+    bool joystickLeft = (digitalRead(JOYSTICK_LEFT_PIN) == LOW);  // Assuming LOW means pressed
+    bool joystickRight = (digitalRead(JOYSTICK_RIGHT_PIN) == LOW);
+    bool joystickUp = (digitalRead(JOYSTICK_UP_PIN) == LOW);
+    bool joystickDown = (digitalRead(JOYSTICK_DOWN_PIN) == LOW);
+    bool joystickCenter = (digitalRead(BUTTON_PIN) == LOW);
+
+    // Update LCDManager with the current joystick state
+    lcdManager.setJoystickState(joystickLeft, joystickRight, joystickUp, joystickDown, joystickCenter);
+
+    // Update the screen and navigate if necessary
+    lcdManager.navigateScreens();  // Check if joystick left/right is pressed and change screen
+    lcdManager.update();  //
+
+    // Check for any state change in LEDs or switch to update LCD
+    bool currentLED1State = hardwareManager.getLED1State();
+    bool currentLED2State = hardwareManager.getLED2State();
+    bool currentSwitchState = hardwareManager.isSwitchOn();
+
+    // Update LCD if there's a change in any LED or switch state
+    if (currentLED1State != lastLED1State || currentLED2State != lastLED2State || currentSwitchState != lastSwitchState) {
+        lcdManager.update();
+        lastLED1State = currentLED1State;
+        lastLED2State = currentLED2State;
+        lastSwitchState = currentSwitchState;
+        
+    }
